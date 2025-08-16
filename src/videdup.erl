@@ -44,5 +44,8 @@ write_signature(VideoPath) when is_list(VideoPath) ->
 
     case vice:convert(VideoPath, "-", Options, sync) of
         ok -> {ok, SigFile};
-        Other -> Other
+        {ok, _In, _Out} -> {ok, SigFile};
+        {ok, _Something} -> {ok, SigFile};
+        {error, _}=Error -> Error;
+        Other -> {error, {unexpected_convert_result, Other}}
     end.
