@@ -1,6 +1,7 @@
 -module(videdup).
 
--export([read_sig/1]).
+-export([read_sig/1,
+         write_signature/1]).
 
 -record(fine,  {idx, confidence, words, frame_sig}).   %% one frame
 -record(coarse,{bitmaps}).                             %% 5×31 bytes
@@ -27,3 +28,21 @@ read_fines(N, <<Idx:32/little,Conf:8,Words:40/binary,
 read_coarses(0, _Bin, Acc) -> Acc;
 read_coarses(N, <<Bitmaps:155/binary,Rest/binary>>, Acc) ->
     read_coarses(N-1, Rest, [#coarse{bitmaps=Bitmaps}|Acc]).
+
+%% Generate an ffmpeg signature file for the given video using vice.
+%% Writes ./<basename>.sig in the current working directory and returns {ok, SigFile}.
+write_signature(VideoPath) when is_list(VideoPath) ->
+    BaseName = filename:basename(VideoPath),
+    RootName = filename:rootname(BaseName),
+    SigFile  = filename:join(".", RootName ++ ".sig"),
+
+    Options = [
+        {map, "0:v"},
+        {video_filtergraph, lists:flatten(io_lib:format("signature=filename=~s", [SigFile]))},
+        {output_format, "null"}
+    ],
+
+    case vice:convert(VideoPath, "-", Options, sync) of
+        ok -> {ok, SigFile};
+        Other -> Other
+    end.

@@ -5,7 +5,8 @@
     {mod, {videdup_app, []}},
     {applications, [
         kernel,
-        stdlib
+        stdlib,
+        vice
     ]},
     {env, []},
     {modules, []},
