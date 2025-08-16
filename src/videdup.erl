@@ -7,15 +7,14 @@
 -record(coarse,{bitmaps}).                             %% 5×31 bytes
 
 read_sig(File) ->
-    {ok,Bin} = file:read_file(File),
-    <<$S,$G,$P,0,         %% magic
-      1:32/little,        %% version
-      FineN:32/little,
-      CoarseN:32/little,
-      Rest/binary>> = Bin,
-    {Fines,AfterFine} = read_fines(FineN, Rest, []),
-    Coarses          = read_coarses(CoarseN, AfterFine, []),
-    #{fine => lists:reverse(Fines), coarse => lists:reverse(Coarses)}.
+    case file:read_file(File) of
+        {ok, Bin} ->
+            case parse_sgp(Bin) of
+                {ok, _}=Ok -> Ok;
+                {error, _} -> parse_ffmpeg_signature(Bin)
+            end;
+        {error, _}=Error -> Error
+    end.
 
 read_fines(0, Bin, Acc) -> {Acc,Bin};
 read_fines(N, <<Idx:32/little,Conf:8,Words:40/binary,
@@ -49,3 +48,30 @@ write_signature(VideoPath) when is_list(VideoPath) ->
         {error, _}=Error -> Error;
         Other -> {error, {unexpected_convert_result, Other}}
     end.
+
+parse_sgp(<<$S,$G,$P,0, 1:32/little, FineN:32/little, CoarseN:32/little, Rest/binary>>) ->
+    {Fines,AfterFine} = read_fines(FineN, Rest, []),
+    Coarses          = read_coarses(CoarseN, AfterFine, []),
+    {ok, #{format => sgp_v1,
+           fine => lists:reverse(Fines),
+           coarse => lists:reverse(Coarses)}};
+parse_sgp(_Bin) -> {error, not_sgp}.
+
+parse_ffmpeg_signature(
+    <<1:32/big, Flags1:32/big, Word3:32/big, Flags2:32/big, HeaderSz:32/big, Rest/binary>> = Bin
+) when byte_size(Bin) >= 32 ->
+    %% Basic structural validation observed from real FFmpeg signature files
+    case {Flags1 band 16#80000000, Flags2 band 16#80000000} of
+        {16#80000000, 16#80000000} ->
+            {ok, #{format => ffmpeg_signature,
+                   version => 1,
+                   flags1 => Flags1,
+                   flags2 => Flags2,
+                   word3 => Word3,
+                   header_size => HeaderSz,
+                   payload_bytes => byte_size(Rest),
+                   size_bytes => byte_size(Bin)}};
+        _ ->
+            {error, unsupported_signature_format}
+    end;
+parse_ffmpeg_signature(_Bin) -> {error, unsupported_signature_format}.
