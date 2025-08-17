@@ -39,9 +39,7 @@ read_sig_parses_sig(Config) ->
     DataDir = proplists:get_value(data_dir, Config),
     Video = filename:join(DataDir, "t_2.mp4"),
     {ok, _} = videdup:write_signature(Video),
-    {ok, Bin} = file:read_file("./t_2.sig"),
-    true = is_binary(Bin),
-    true = (byte_size(Bin) > 0),
+    {ok, #{}} = videdup:read_sig("t_2.sig"),
     ok.
 
 
