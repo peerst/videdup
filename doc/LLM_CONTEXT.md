@@ -50,3 +50,10 @@ Notes:
  
  Production note:
  - Do not call `application:ensure_all_started(vice)` in production. `vice` is listed as an application dependency in `videdup.app.src` and included in the release via `relx` in `rebar.config`, so it will be started automatically by the release.
+
+  Common Test conventions for this project:
+
+  - Start long-running deps (like `vice`) in `init_per_suite/1` and stop them in `end_per_suite/1`.
+  - Do not change directories within test cases; the default working directory is a per-test folder under the suite `priv_dir` and is suitable for emitting artifacts like `.sig` files.
+  - Prefer cleanup in `end_per_testcase/2` (e.g., delete generated `*.sig` files) instead of `try ... after` in each test.
+  - Use pattern matching for assertions where appropriate to allow tests to fail fast (e.g., `{ok, Path} = videdup:write_signature(Video)`).
