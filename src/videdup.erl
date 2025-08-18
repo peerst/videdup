@@ -29,20 +29,24 @@ parse_signature_header(
     Width  = PixelX2 + 1,
     Height = PixelY2 + 1,
     {Segments, AfterSegments} = parse_segments(Rest, NumSegments, []),
-    Map = #{spatial_location_flag => SpatialFlag,
-            pixel_x1 => PixelX1,
-            pixel_y1 => PixelY1,
-            width => Width,
-            height => Height,
-            start_frame => StartFrame,
-            num_frames => NumFrames,
-            media_time_unit => MediaTimeUnit,
-            start_media_time => StartMediaTime,
-            end_media_time => EndMediaTime,
-            num_segments => NumSegments,
-            segments => Segments,
-            rest => AfterSegments},
-    {ok, Map};
+    case parse_frames_section(AfterSegments, NumFrames) of
+        {ok, AfterFrames} ->
+            Map = #{spatial_location_flag => SpatialFlag,
+                    pixel_x1 => PixelX1,
+                    pixel_y1 => PixelY1,
+                    width => Width,
+                    height => Height,
+                    start_frame => StartFrame,
+                    num_frames => NumFrames,
+                    media_time_unit => MediaTimeUnit,
+                    start_media_time => StartMediaTime,
+                    end_media_time => EndMediaTime,
+                    num_segments => NumSegments,
+                    segments => Segments,
+                    rest => AfterFrames},
+            {ok, Map};
+        {error, _}=Error -> Error
+    end;
 parse_signature_header(_Other) ->
     {error, unsupported_signature_format}.
 
@@ -53,6 +57,30 @@ parse_segments(Bits, N, Acc) when N > 0 ->
             parse_segments(NextBits, N-1, [SegMap|Acc]);
         {error, _}=Error -> Error
     end.
+ 
+parse_frames_section(
+    <<CompressionFlag:1, Bits/bitstring>>, NumFrames
+) when CompressionFlag =:= 0 ->
+    parse_frames(Bits, NumFrames);
+parse_frames_section(_Other, _NumFrames) -> {error, unsupported_signature_format}.
+
+parse_frames(Bits, 0) -> {ok, Bits};
+parse_frames(Bits, N) when N > 0 ->
+    case parse_one_frame(Bits) of
+        {ok, Next} -> parse_frames(Next, N-1);
+        {error, _}=Error -> Error
+    end.
+
+parse_one_frame(
+    <<MediaTimeFlag:1,
+      _PTS32:32/big,
+      _Confidence:8,
+      _W0:8, _W1:8, _W2:8, _W3:8, _W4:8,
+      _:608,
+      Rest/bitstring>>
+) when MediaTimeFlag =:= 1 ->
+    {ok, Rest};
+parse_one_frame(_Other) -> {error, truncated}.
 
 parse_one_segment(
     <<StartFrame:32/big,
