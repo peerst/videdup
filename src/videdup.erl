@@ -4,8 +4,12 @@
          write_signature/1]).
 
 read_sig(File) ->
-    {ok,Bin} = file:read_file(File),
-    {error, not_yet_implemented}.
+    case file:read_file(File) of
+        %% Minimal structural check for FFmpeg binary signature: first 32 bits == 1
+        {ok, <<1:32/big, _Rest/binary>>} -> {ok, #{}};
+        {ok, _} -> {error, unsupported_signature_format};
+        {error, _}=Error -> Error
+    end.
    
 %% Generate an ffmpeg signature file for the given video using vice.
 %% Writes ./<basename>.sig in the current working directory and returns {ok, SigFile}.
