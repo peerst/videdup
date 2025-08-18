@@ -30,7 +30,7 @@ parse_signature_header(
     Height = PixelY2 + 1,
     {Segments, AfterSegments} = parse_segments(Rest, NumSegments, []),
     case parse_frames_section(AfterSegments, NumFrames) of
-        {ok, AfterFrames} ->
+        {ok, Frames, AfterFrames} ->
             Map = #{spatial_location_flag => SpatialFlag,
                     pixel_x1 => PixelX1,
                     pixel_y1 => PixelY1,
@@ -43,6 +43,7 @@ parse_signature_header(
                     end_media_time => EndMediaTime,
                     num_segments => NumSegments,
                     segments => Segments,
+                    frames => Frames,
                     rest => AfterFrames},
             {ok, Map};
         {error, _}=Error -> Error
@@ -61,25 +62,28 @@ parse_segments(Bits, N, Acc) when N > 0 ->
 parse_frames_section(
     <<CompressionFlag:1, Bits/bitstring>>, NumFrames
 ) when CompressionFlag =:= 0 ->
-    parse_frames(Bits, NumFrames);
+    parse_frames(Bits, NumFrames, 0, []);
 parse_frames_section(_Other, _NumFrames) -> {error, unsupported_signature_format}.
 
-parse_frames(Bits, 0) -> {ok, Bits};
-parse_frames(Bits, N) when N > 0 ->
+parse_frames(Bits, 0, _Index, Acc) -> {ok, lists:reverse(Acc), Bits};
+parse_frames(Bits, N, Index, Acc) when N > 0 ->
     case parse_one_frame(Bits) of
-        {ok, Next} -> parse_frames(Next, N-1);
+        {ok, FrameMap, Next} ->
+            parse_frames(Next, N-1, Index+1, [FrameMap|Acc]);
         {error, _}=Error -> Error
     end.
 
 parse_one_frame(
     <<MediaTimeFlag:1,
-      _PTS32:32/big,
-      _Confidence:8,
-      _W0:8, _W1:8, _W2:8, _W3:8, _W4:8,
+      PTS32:32/big,
+      Confidence:8,
+      W0:8, W1:8, W2:8, W3:8, W4:8,
       _:608,
       Rest/bitstring>>
 ) when MediaTimeFlag =:= 1 ->
-    {ok, Rest};
+    {ok, #{pts32 => PTS32,
+            confidence => Confidence,
+            words => [W0, W1, W2, W3, W4]}, Rest};
 parse_one_frame(_Other) -> {error, truncated}.
 
 parse_one_segment(
