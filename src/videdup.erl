@@ -78,12 +78,13 @@ parse_one_frame(
       PTS32:32/big,
       Confidence:8,
       W0:8, W1:8, W2:8, W3:8, W4:8,
-      _:608,
+      FrameSig:608,
       Rest/bitstring>>
 ) when MediaTimeFlag =:= 1 ->
     {ok, #{pts32 => PTS32,
             confidence => Confidence,
-            words => [W0, W1, W2, W3, W4]}, Rest};
+            words => [W0, W1, W2, W3, W4],
+            framesig => <<FrameSig:608>>}, Rest};
 parse_one_frame(_Other) -> {error, truncated}.
 
 parse_one_segment(
@@ -94,26 +95,35 @@ parse_one_segment(
       EndMediaTime:32/big,
       Bits/bitstring>>
 ) when MediaTimeFlag =:= 1 ->
-    case skip_bow_sets(Bits, 5) of
-        {ok, After} ->
+    case parse_bow_sets(Bits, 5, []) of
+        {ok, WordSets, After} ->
             {ok, #{start_frame => StartFrame,
                     end_frame => EndFrame,
                     start_media_time => StartMediaTime,
-                    end_media_time => EndMediaTime}, After};
+                    end_media_time => EndMediaTime,
+                    bow_sets => WordSets},
+             After};
         {error, _}=Error -> Error
     end;
 parse_one_segment(_Other) -> {error, unsupported_signature_format}.
 
-skip_bow_sets(Bits, 0) -> {ok, Bits};
-skip_bow_sets(Bits, K) when K > 0 ->
-    case skip_bits(Bits, 243) of
-        {ok, AfterOne} -> skip_bow_sets(AfterOne, K-1);
+parse_bow_sets(Bits, 0, Acc) -> {ok, lists:reverse(Acc), Bits};
+parse_bow_sets(Bits, K, Acc) when K > 0 ->
+    case read_bits(Bits, 243) of
+        {ok, SetBits, AfterOne} ->
+            parse_bow_sets(AfterOne, K-1, [SetBits|Acc]);
         {error, _}=Error -> Error
     end.
 
 skip_bits(Bits, N) when is_integer(N), N >= 0 ->
     case Bits of
         <<_:N, Rest/bitstring>> -> {ok, Rest};
+        _ -> {error, truncated}
+    end.
+
+read_bits(Bits, N) when is_integer(N), N >= 0 ->
+    case Bits of
+        <<Value:N, Rest/bitstring>> -> {ok, <<Value:N>>, Rest};
         _ -> {error, truncated}
     end.
    
