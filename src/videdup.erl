@@ -28,6 +28,7 @@ parse_signature_header(
 ) when SpatialFlag =:= 1, MediaTimeFlag =:= 1 ->
     Width  = PixelX2 + 1,
     Height = PixelY2 + 1,
+    {Segments, AfterSegments} = parse_segments(Rest, NumSegments, []),
     Map = #{spatial_location_flag => SpatialFlag,
             pixel_x1 => PixelX1,
             pixel_y1 => PixelY1,
@@ -38,10 +39,51 @@ parse_signature_header(
             media_time_unit => MediaTimeUnit,
             start_media_time => StartMediaTime,
             end_media_time => EndMediaTime,
-            num_segments => NumSegments},
+            num_segments => NumSegments,
+            segments => Segments,
+            rest => AfterSegments},
     {ok, Map};
 parse_signature_header(_Other) ->
     {error, unsupported_signature_format}.
+
+parse_segments(Bits, 0, Acc) -> {lists:reverse(Acc), Bits};
+parse_segments(Bits, N, Acc) when N > 0 ->
+    case parse_one_segment(Bits) of
+        {ok, SegMap, NextBits} ->
+            parse_segments(NextBits, N-1, [SegMap|Acc]);
+        {error, _}=Error -> Error
+    end.
+
+parse_one_segment(
+    <<StartFrame:32/big,
+      EndFrame:32/big,
+      MediaTimeFlag:1,
+      StartMediaTime:32/big,
+      EndMediaTime:32/big,
+      Bits/bitstring>>
+) when MediaTimeFlag =:= 1 ->
+    case skip_bow_sets(Bits, 5) of
+        {ok, After} ->
+            {ok, #{start_frame => StartFrame,
+                    end_frame => EndFrame,
+                    start_media_time => StartMediaTime,
+                    end_media_time => EndMediaTime}, After};
+        {error, _}=Error -> Error
+    end;
+parse_one_segment(_Other) -> {error, unsupported_signature_format}.
+
+skip_bow_sets(Bits, 0) -> {ok, Bits};
+skip_bow_sets(Bits, K) when K > 0 ->
+    case skip_bits(Bits, 243) of
+        {ok, AfterOne} -> skip_bow_sets(AfterOne, K-1);
+        {error, _}=Error -> Error
+    end.
+
+skip_bits(Bits, N) when is_integer(N), N >= 0 ->
+    case Bits of
+        <<_:N, Rest/bitstring>> -> {ok, Rest};
+        _ -> {error, truncated}
+    end.
    
 %% Generate an ffmpeg signature file for the given video using vice.
 %% Writes ./<basename>.sig in the current working directory and returns {ok, SigFile}.
